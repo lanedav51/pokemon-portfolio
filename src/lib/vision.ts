@@ -12,15 +12,24 @@ function getClient(): ImageAnnotatorClient {
 
 type EntityAnnotation = protos.google.cloud.vision.v1.IEntityAnnotation;
 
+interface Word {
+  text: string;
+  x: number;
+  y: number;
+  height: number;
+}
+
 const FRACTION_REGEX = /(\d{1,4})\s*\/\s*(\d{1,4})/;
 
-function boxCenter(annotation: EntityAnnotation): { x: number; y: number } {
+function wordFromAnnotation(annotation: EntityAnnotation): Word {
   const vertices = annotation.boundingPoly?.vertices ?? [];
   const xs = vertices.map((v) => v.x ?? 0);
   const ys = vertices.map((v) => v.y ?? 0);
   return {
+    text: annotation.description ?? "",
     x: xs.reduce((a, b) => a + b, 0) / (xs.length || 1),
     y: ys.reduce((a, b) => a + b, 0) / (ys.length || 1),
+    height: ys.length > 0 ? Math.max(...ys) - Math.min(...ys) : 0,
   };
 }
 
@@ -32,20 +41,72 @@ function boxCenter(annotation: EntityAnnotation): { x: number; y: number } {
  * reading-order can jumble in next to the wrong number.
  */
 function guessNumberFromBottomLeft(
-  words: EntityAnnotation[],
+  words: Word[],
   pageWidth: number,
   pageHeight: number
 ): { number: string; total: string } | null {
   if (!pageWidth || !pageHeight) return null;
 
   const bottomLeftWords = words
-    .map((w) => ({ text: w.description ?? "", ...boxCenter(w) }))
     .filter((w) => w.text && w.x < pageWidth * 0.45 && w.y > pageHeight * 0.72)
     .sort((a, b) => a.x - b.x);
 
   const joined = bottomLeftWords.map((w) => w.text).join(" ");
   const match = joined.match(FRACTION_REGEX);
   return match ? { number: match[1], total: match[2] } : null;
+}
+
+const NAME_BLOCKLIST = /^(basic|stage|mega|restored)$/i;
+
+function cleanNameText(text: string): string {
+  return text
+    .replace(/\bHP\b/gi, "")
+    .replace(/\b\d+\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The Pokemon name is reliably the largest-font text in the top third of
+ * the card — bigger than the small "Stage 2"/"Basic" evolution banner above
+ * it and the HP label beside it. Picking "the first line of text" (as OCR
+ * reading order presents it) instead grabs that banner text more often than
+ * not, since it sits above the name. Font size (word bounding-box height)
+ * doesn't have that failure mode, so we cluster words into lines by
+ * y-position and take the line with the tallest average word height.
+ */
+function guessNameFromLargestTopText(words: Word[], pageWidth: number, pageHeight: number): string | null {
+  if (!pageWidth || !pageHeight) return null;
+
+  const topWords = words.filter((w) => w.text && w.height > 0 && w.y < pageHeight * 0.35);
+  if (topWords.length === 0) return null;
+
+  const sorted = [...topWords].sort((a, b) => a.y - b.y);
+  const lines: Word[][] = [];
+  for (const word of sorted) {
+    const currentLine = lines[lines.length - 1];
+    const first = currentLine?.[0];
+    if (first && Math.abs(word.y - first.y) < first.height * 0.6) {
+      currentLine.push(word);
+    } else {
+      lines.push([word]);
+    }
+  }
+
+  const candidates = lines
+    .map((lineWords) => {
+      const text = cleanNameText(
+        [...lineWords].sort((a, b) => a.x - b.x).map((w) => w.text).join(" ")
+      );
+      const avgHeight = lineWords.reduce((sum, w) => sum + w.height, 0) / lineWords.length;
+      return { text, avgHeight };
+    })
+    .filter((line) => line.text.length > 1 && !NAME_BLOCKLIST.test(line.text));
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => b.avgHeight - a.avgHeight);
+  return candidates[0].text;
 }
 
 /**
@@ -66,10 +127,11 @@ export async function recognizeCardText(imageBase64: string): Promise<{
   const rawText = result.fullTextAnnotation?.text ?? "";
   const page = result.fullTextAnnotation?.pages?.[0];
   // textAnnotations[0] is the full concatenated blob; the rest are individual words with geometry.
-  const words = (result.textAnnotations ?? []).slice(1);
+  const words = (result.textAnnotations ?? []).slice(1).map(wordFromAnnotation);
+  const pageWidth = page?.width ?? 0;
+  const pageHeight = page?.height ?? 0;
 
-  const bottomLeft = page ? guessNumberFromBottomLeft(words, page.width ?? 0, page.height ?? 0) : null;
-
+  const bottomLeft = guessNumberFromBottomLeft(words, pageWidth, pageHeight);
   // Fall back to a whole-text regex if we didn't get per-word geometry back
   // (e.g. an older API response shape) or nothing landed in the corner.
   const fallbackMatch = bottomLeft ? null : rawText.match(FRACTION_REGEX);
@@ -82,9 +144,11 @@ export async function recognizeCardText(imageBase64: string): Promise<{
     .map((line) => line.trim())
     .filter(Boolean);
 
-  // The card name is almost always the first non-empty OCR line on a real
-  // photo (top of the card), and rarely contains digits or a slash.
-  const guessedName = lines.find((line) => !/\d/.test(line) && line.length > 1) ?? lines[0] ?? null;
+  const guessedName =
+    guessNameFromLargestTopText(words, pageWidth, pageHeight) ??
+    lines.find((line) => !/\d/.test(line) && line.length > 1 && !NAME_BLOCKLIST.test(line.trim())) ??
+    lines[0] ??
+    null;
 
   return { rawText, guessedNumber, guessedTotal, guessedName };
 }
