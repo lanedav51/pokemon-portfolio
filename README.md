@@ -7,15 +7,24 @@ along for free, and the whole thing gets appended as a row in a Google Sheet.
 
 ## How it works
 
-1. **`/add`** — take/upload a photo (uses the phone camera via the browser).
-   The photo is sent to Google Cloud Vision for OCR, never stored — it's only
-   used to pre-fill a search.
-2. The guessed name/number are used to search pokemontcg.io. You pick the
-   correct card from the results (with images), fixing any OCR mistakes.
+1. **`/add`** — take a photo, choose one from your library, or skip the photo
+   entirely and type the card name/number directly. A photo (if you use one)
+   is sent to Google Cloud Vision for OCR, never stored — it's only used to
+   pre-fill the search fields below it, which stay editable either way.
+2. The name/number are used to search pokemontcg.io. You pick the correct
+   card from the results (with images), fixing any OCR mistakes.
 3. Set condition, quantity, price (pre-filled with the live market price),
-   and optional notes, then save. This appends one row to your Google Sheet.
-4. **`/`** — the portfolio view reads the sheet back and shows total value,
-   card count, and the full list.
+   and optional notes, then save. This appends one row to the selected
+   portfolio (a tab in your Google Sheet).
+4. **`/`** — the portfolio view reads the selected tab back and shows total
+   value, card count, and the full list.
+
+### Multiple portfolios
+
+Each portfolio is a separate tab in the same Google Sheet. Use the dropdown
+at the top of `/add` or `/` to switch between them, or pick **+ New
+portfolio…** to create one on the spot — it adds a new tab with the header
+row already set up. Your last-used portfolio is remembered on that device.
 
 ## Google Cloud setup
 

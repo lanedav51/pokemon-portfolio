@@ -2,7 +2,8 @@ import { google } from "googleapis";
 import { getGoogleCredentials } from "./googleAuth";
 import type { AddCardPayload, PortfolioEntry } from "./types";
 
-const SHEET_NAME = "Portfolio";
+export const DEFAULT_SHEET_NAME = "Portfolio";
+
 const HEADER_ROW = [
   "Date Added",
   "Card Name",
@@ -37,27 +38,32 @@ async function getSheetsClient() {
   return google.sheets({ version: "v4", auth });
 }
 
-async function ensureHeaderRow(): Promise<void> {
+// A1-notation ranges need the sheet/tab name single-quoted whenever it
+// contains spaces or other special characters; a literal single quote in
+// the name itself is escaped by doubling it.
+function quoteSheetName(name: string): string {
+  return `'${name.replace(/'/g, "''")}'`;
+}
+
+async function ensureHeaderRow(sheetName: string): Promise<void> {
   const sheets = await getSheetsClient();
   const spreadsheetId = getSheetId();
+  const range = `${quoteSheetName(sheetName)}!A1:K1`;
 
-  const existing = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${SHEET_NAME}!A1:K1`,
-  });
+  const existing = await sheets.spreadsheets.values.get({ spreadsheetId, range });
 
   if (!existing.data.values || existing.data.values.length === 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${SHEET_NAME}!A1:K1`,
+      range,
       valueInputOption: "RAW",
       requestBody: { values: [HEADER_ROW] },
     });
   }
 }
 
-export async function appendCard(entry: AddCardPayload): Promise<void> {
-  await ensureHeaderRow();
+export async function appendCard(entry: AddCardPayload, sheetName: string): Promise<void> {
+  await ensureHeaderRow(sheetName);
   const sheets = await getSheetsClient();
 
   const totalValue = entry.price * entry.quantity;
@@ -77,19 +83,19 @@ export async function appendCard(entry: AddCardPayload): Promise<void> {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSheetId(),
-    range: `${SHEET_NAME}!A:K`,
+    range: `${quoteSheetName(sheetName)}!A:K`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [row] },
   });
 }
 
-export async function listPortfolio(): Promise<PortfolioEntry[]> {
+export async function listPortfolio(sheetName: string): Promise<PortfolioEntry[]> {
   const sheets = await getSheetsClient();
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSheetId(),
-    range: `${SHEET_NAME}!A2:K`,
+    range: `${quoteSheetName(sheetName)}!A2:K`,
   });
 
   const rows = res.data.values ?? [];
@@ -128,4 +134,44 @@ export async function listPortfolio(): Promise<PortfolioEntry[]> {
       } satisfies PortfolioEntry;
     })
     .filter((entry): entry is PortfolioEntry => entry !== null);
+}
+
+/** Lists every tab in the spreadsheet, in left-to-right order — each tab is a separate portfolio. */
+export async function listSheetTabs(): Promise<string[]> {
+  const sheets = await getSheetsClient();
+
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: getSheetId(),
+    fields: "sheets.properties.title",
+  });
+
+  return (res.data.sheets ?? [])
+    .map((sheet) => sheet.properties?.title)
+    .filter((title): title is string => Boolean(title));
+}
+
+const INVALID_SHEET_NAME_CHARS = /[[\]*?/\\:]/;
+
+export async function createSheetTab(name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Portfolio name can't be empty.");
+  if (trimmed.length > 100) throw new Error("Portfolio name is too long (max 100 characters).");
+  if (INVALID_SHEET_NAME_CHARS.test(trimmed)) {
+    throw new Error(`Portfolio name can't contain any of: [ ] * ? / \\ :`);
+  }
+
+  const existing = await listSheetTabs();
+  if (existing.some((title) => title.toLowerCase() === trimmed.toLowerCase())) {
+    throw new Error(`A portfolio named "${trimmed}" already exists.`);
+  }
+
+  const sheets = await getSheetsClient();
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: getSheetId(),
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: trimmed } } }],
+    },
+  });
+
+  await ensureHeaderRow(trimmed);
 }

@@ -3,29 +3,46 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useStoredPortfolioName } from "@/lib/portfolioPreference";
 import type { PortfolioEntry } from "@/lib/types";
+import PortfolioSelector from "@/components/PortfolioSelector";
 
 export default function PortfolioPage() {
+  const sheetName = useStoredPortfolioName();
+
+  return (
+    <div className="flex flex-col gap-5 px-4 pt-6">
+      <h1 className="text-xl font-semibold">Your Portfolio</h1>
+
+      <PortfolioSelector />
+
+      {/* Keyed by sheetName so switching portfolios remounts this with
+          fresh (null) entries/error state instead of showing stale data
+          from the previous tab while the new one loads. */}
+      <PortfolioList key={sheetName} sheetName={sheetName} />
+    </div>
+  );
+}
+
+function PortfolioList({ sheetName }: { sheetName: string }) {
   const [entries, setEntries] = useState<PortfolioEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/sheets/list")
+    fetch(`/api/sheets/list?sheet=${encodeURIComponent(sheetName)}`)
       .then(async (res) => {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Failed to load portfolio");
         setEntries(json.entries);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load portfolio"));
-  }, []);
+  }, [sheetName]);
 
   const totalValue = entries?.reduce((sum, e) => sum + e.totalValue, 0) ?? 0;
   const totalCards = entries?.reduce((sum, e) => sum + e.quantity, 0) ?? 0;
 
   return (
-    <div className="flex flex-col gap-5 px-4 pt-6">
-      <h1 className="text-xl font-semibold">Your Portfolio</h1>
-
+    <>
       {error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {error}
@@ -48,7 +65,7 @@ export default function PortfolioPage() {
       {entries && entries.length === 0 && (
         <div className="flex flex-col items-center gap-3 pt-16 text-center text-neutral-500">
           <span className="text-3xl">🃏</span>
-          <p className="text-sm">No cards yet.</p>
+          <p className="text-sm">No cards in &quot;{sheetName}&quot; yet.</p>
           <Link href="/add" className="rounded-full bg-red-600 px-5 py-2 text-sm font-medium text-white">
             Scan your first card
           </Link>
@@ -94,6 +111,6 @@ export default function PortfolioPage() {
       )}
 
       {!entries && !error && <p className="text-center text-sm text-neutral-500">Loading…</p>}
-    </div>
+    </>
   );
 }

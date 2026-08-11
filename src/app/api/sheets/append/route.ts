@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { appendCard } from "@/lib/googleSheets";
+import { appendCard, DEFAULT_SHEET_NAME } from "@/lib/googleSheets";
 import type { AddCardPayload } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -10,7 +10,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required card fields" }, { status: 400 });
     }
 
-    await appendCard(payload);
+    const sheetName = payload.sheetName?.trim() || DEFAULT_SHEET_NAME;
+    await appendCard(payload, sheetName);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("Append to sheet failed", err);

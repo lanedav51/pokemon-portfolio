@@ -3,7 +3,9 @@
 import { useRef, useState } from "react";
 import Image from "next/image";
 import { fileToResizedBase64 } from "@/lib/image";
+import { useStoredPortfolioName } from "@/lib/portfolioPreference";
 import type { AddCardPayload, CardCondition, CardSearchResult } from "@/lib/types";
+import PortfolioSelector from "@/components/PortfolioSelector";
 
 const CONDITIONS: CardCondition[] = [
   "Mint",
@@ -16,8 +18,13 @@ const CONDITIONS: CardCondition[] = [
 
 type Status = "idle" | "scanning" | "searching" | "submitting" | "success" | "error";
 
+const OCR_TIMEOUT_MS = 25000;
+
 export default function AddCardPage() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
+
+  const sheetName = useStoredPortfolioName();
 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -67,11 +74,19 @@ export default function AddCardPage() {
       const base64 = await fileToResizedBase64(file);
       setPhotoPreview(`data:image/jpeg;base64,${base64}`);
 
-      const res = await fetch("/api/ocr", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64 }),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), OCR_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch("/api/ocr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: base64 }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "OCR failed");
 
@@ -83,8 +98,19 @@ export default function AddCardPage() {
       setSearchNumber(guessedFraction);
       await runSearch(guessedName, guessedFraction);
     } catch (err) {
-      setStatus("error");
-      setErrorMessage(err instanceof Error ? err.message : "Scan failed");
+      // The photo is already captured and previewed at this point, and the
+      // name/number fields below are always editable — so a scan failure
+      // (including a timeout on a slow mobile connection) doesn't strand
+      // the user, it just means they fill in / correct the search manually.
+      setStatus("idle");
+      const timedOut = err instanceof DOMException && err.name === "AbortError";
+      setErrorMessage(
+        timedOut
+          ? "Scanning took too long. Enter the card name/number below to search manually."
+          : err instanceof Error
+            ? `${err.message} — you can still search manually below.`
+            : "Scan failed — you can still search manually below."
+      );
     }
   }
 
@@ -106,7 +132,8 @@ export default function AddCardPage() {
     setNotes("");
     setStatus("idle");
     setErrorMessage(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    if (libraryInputRef.current) libraryInputRef.current.value = "";
   }
 
   async function handleSubmit() {
@@ -124,6 +151,7 @@ export default function AddCardPage() {
       price,
       notes,
       imageUrl: selectedCard.imageLarge,
+      sheetName,
     };
 
     try {
@@ -147,7 +175,7 @@ export default function AddCardPage() {
         <div className="text-4xl">✅</div>
         <h1 className="text-xl font-semibold">Added to your portfolio</h1>
         <p className="text-sm text-neutral-500">
-          {selectedCard?.name} was saved to your Google Sheet.
+          {selectedCard?.name} was saved to &quot;{sheetName}&quot;.
         </p>
         <button
           onClick={resetForm}
@@ -163,43 +191,84 @@ export default function AddCardPage() {
     <div className="flex flex-col gap-5 px-4 pt-6">
       <h1 className="text-xl font-semibold">Add a Card</h1>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={handlePhotoChange}
-        className="hidden"
-        id="photo-input"
-      />
+      <PortfolioSelector />
 
-      {!photoPreview ? (
-        <label
-          htmlFor="photo-input"
-          className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-300 bg-white py-16 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          <span className="text-3xl">📷</span>
-          <span className="text-sm font-medium">Take or upload a photo</span>
-        </label>
-      ) : (
-        <div className="relative overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photoPreview} alt="Card photo" className="w-full object-cover" />
-          <label
-            htmlFor="photo-input"
-            className="absolute bottom-2 right-2 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white"
-          >
-            Retake
-          </label>
-        </div>
-      )}
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-medium text-neutral-500">Photo (optional — auto-fills the fields below)</span>
 
-      {status === "scanning" && (
-        <p className="text-center text-sm text-neutral-500">Scanning card…</p>
-      )}
+        {/* Two separate inputs: `capture` forces the camera straight open on
+            most mobile browsers and — critically — hides the "choose from
+            library" option from the native picker, so it can't be on the
+            one input used for both actions. Triggered via an explicit
+            button click + ref.click() rather than a <label htmlFor>, which
+            has had reliability issues activating hidden file inputs inside
+            an iOS home-screen-installed (standalone) PWA. */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handlePhotoChange}
+          className="hidden"
+        />
+        <input
+          ref={libraryInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handlePhotoChange}
+          className="hidden"
+        />
 
-      {photoPreview && status !== "scanning" && (
+        {!photoPreview ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-300 bg-white py-10 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900"
+            >
+              <span className="text-3xl">📷</span>
+              <span className="text-sm font-medium">Take Photo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => libraryInputRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-neutral-300 bg-white py-10 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900"
+            >
+              <span className="text-3xl">🖼️</span>
+              <span className="text-sm font-medium">Choose from Library</span>
+            </button>
+          </div>
+        ) : (
+          <div className="relative overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoPreview} alt="Card photo" className="w-full object-cover" />
+            <div className="absolute bottom-2 right-2 flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white"
+              >
+                Retake
+              </button>
+              <button
+                type="button"
+                onClick={() => libraryInputRef.current?.click()}
+                className="rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white"
+              >
+                Library
+              </button>
+            </div>
+          </div>
+        )}
+
+        {status === "scanning" && (
+          <p className="text-center text-sm text-neutral-500">Scanning card…</p>
+        )}
+      </div>
+
+      {status !== "scanning" && (
         <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-neutral-500">Card name / number</span>
           <div className="flex gap-2">
             <input
               value={searchQuery}
@@ -216,7 +285,7 @@ export default function AddCardPage() {
           </div>
           <button
             onClick={() => runSearch(searchQuery, searchNumber)}
-            disabled={status === "searching"}
+            disabled={status === "searching" || !searchQuery.trim()}
             className="rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
           >
             {status === "searching" ? "Searching…" : "Search"}

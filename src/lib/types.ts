@@ -45,4 +45,5 @@ export interface AddCardPayload {
   price: number;
   notes: string;
   imageUrl: string;
+  sheetName: string;
 }
