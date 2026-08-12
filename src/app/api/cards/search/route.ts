@@ -5,7 +5,7 @@ export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("q") ?? "";
   const number = req.nextUrl.searchParams.get("number") ?? undefined;
 
-  if (!query.trim()) {
+  if (!query.trim() && !number?.trim()) {
     return NextResponse.json({ results: [] });
   }
 

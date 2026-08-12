@@ -33,11 +33,12 @@ export default function AddCardPage() {
   const [notes, setNotes] = useState("");
 
   async function runSearch(query: string, number: string) {
-    if (!query.trim()) return;
+    if (!query.trim() && !number.trim()) return;
     setStatus("searching");
     setErrorMessage(null);
     try {
-      const params = new URLSearchParams({ q: query });
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("q", query.trim());
       if (number.trim()) params.set("number", number.trim());
       const res = await fetch(`/api/cards/search?${params.toString()}`);
       const json = await res.json();
@@ -259,12 +260,12 @@ export default function AddCardPage() {
 
       {status !== "scanning" && (
         <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-neutral-500">Card name / number</span>
+          <span className="text-xs font-medium text-neutral-500">Card name / number (either one works)</span>
           <div className="flex gap-2">
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Card name"
+              placeholder="Card name (optional)"
               className="flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             />
             <input
@@ -276,7 +277,7 @@ export default function AddCardPage() {
           </div>
           <button
             onClick={() => runSearch(searchQuery, searchNumber)}
-            disabled={status === "searching" || !searchQuery.trim()}
+            disabled={status === "searching" || (!searchQuery.trim() && !searchNumber.trim())}
             className="rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
           >
             {status === "searching" ? "Searching…" : "Search"}

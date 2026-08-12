@@ -195,25 +195,24 @@ function nameMatchScore(candidateName: string, guessName: string): number {
 }
 
 /**
- * Searches pokemontcg.io by free-text name and, optionally, a card number.
- * OCR recovers the small bottom-left "184/159" style fraction reliably even
- * when the stylized name text is noisy, so `number` accepts either a bare
- * number ("184") or the full fraction ("184/159").
+ * Searches pokemontcg.io by free-text name and/or a card number — either
+ * one alone is enough, since the fraction (see below) is often more
+ * reliable than the OCR'd name and shouldn't be required just to search.
+ * `number` accepts a bare number ("184") or the full fraction ("184/159").
  *
  * When both parts of the fraction are present, the most reliable path is
  * set-by-printedTotal + exact number lookup (see findCardsBySetsAndNumber)
- * rather than trusting the OCR'd name — that tier runs first and, if it
- * finds candidates, ranks them by name similarity to `query` just to put
- * the likely match first. Only if that path can't resolve anything do we
- * fall back to progressively looser name-based search.
+ * rather than trusting the OCR'd name — that tier runs first and, if a name
+ * was also given, ranks results by name similarity just to put the likely
+ * match first. Only if that path can't resolve anything (or no fraction was
+ * given) do we fall back to progressively looser name/number search.
  */
-export async function searchCards(query: string, number?: string): Promise<CardSearchResult[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-
-  const nameClause = `name:"*${escapeQueryValue(trimmed)}*"`;
+export async function searchCards(query?: string, number?: string): Promise<CardSearchResult[]> {
+  const trimmed = query?.trim() ?? "";
   const [num, total] = (number?.trim() ?? "").split("/").map((part) => part.trim());
   const hasValidFraction = Boolean(num) && Boolean(total) && /^\d+$/.test(total);
+
+  if (!trimmed && !num) return [];
 
   let lastError: unknown;
 
@@ -223,9 +222,10 @@ export async function searchCards(query: string, number?: string): Promise<CardS
       if (sets.length > 0) {
         const cards = await findCardsBySetsAndNumber(sets, num);
         if (cards.length > 0) {
-          return cards
-            .map(toSearchResult)
-            .sort((a, b) => nameMatchScore(b.name, trimmed) - nameMatchScore(a.name, trimmed));
+          const results = cards.map(toSearchResult);
+          return trimmed
+            ? results.sort((a, b) => nameMatchScore(b.name, trimmed) - nameMatchScore(a.name, trimmed))
+            : results;
         }
       }
     } catch (err) {
@@ -233,13 +233,15 @@ export async function searchCards(query: string, number?: string): Promise<CardS
     }
   }
 
-  // Fuzzy fallback: progressively drop constraints (name+number, then name
-  // only) so an OCR mistake in the fraction never leaves the search empty.
+  // Fuzzy fallback: progressively drop constraints so a missing name or an
+  // OCR mistake in the fraction never leaves the search empty.
+  const nameClause = trimmed ? `name:"*${escapeQueryValue(trimmed)}*"` : null;
+  const numberClause = num ? `number:"${escapeQueryValue(num)}"` : null;
+
   const attempts: string[][] = [];
-  if (num) {
-    attempts.push([nameClause, `number:"${escapeQueryValue(num)}"`]);
-  }
-  attempts.push([nameClause]);
+  if (nameClause && numberClause) attempts.push([nameClause, numberClause]);
+  if (nameClause) attempts.push([nameClause]);
+  if (!nameClause && numberClause) attempts.push([numberClause]);
 
   for (const clauses of attempts) {
     try {
