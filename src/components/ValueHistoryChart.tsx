@@ -134,9 +134,9 @@ export default function ValueHistoryChart({ points }: ValueHistoryChartProps) {
           </g>
         ))}
 
-        {/* Series color (this app's existing red accent) lives on this <g>;
-            the line/area/markers inherit it via currentColor/fill="currentColor". */}
-        <g className="text-red-600 dark:text-red-400">
+        {/* Series color (this app's brand accent) lives on this <g>; the
+            line/area/markers inherit it via currentColor/fill="currentColor". */}
+        <g className="text-sky-600 dark:text-sky-400">
           <path d={chart.areaPath} fill="currentColor" opacity={0.1} stroke="none" />
           <path
             d={chart.linePath}

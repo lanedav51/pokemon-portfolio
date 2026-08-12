@@ -86,16 +86,16 @@ function StatsContent({ sheetName }: { sheetName: string }) {
       <ValueHistoryChart points={history} />
 
       <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="text-xs text-neutral-500">Total Value</div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
+          <div className="text-xs text-neutral-500">⚡ Total Value</div>
           <div className="text-lg font-semibold">${totalValue.toFixed(0)}</div>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="text-xs text-neutral-500">Cards</div>
+          <div className="text-xs text-neutral-500">🎴 Cards</div>
           <div className="text-lg font-semibold">{totalQuantity}</div>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="text-xs text-neutral-500">Avg / Card</div>
+          <div className="text-xs text-neutral-500">💰 Avg / Card</div>
           <div className="text-lg font-semibold">${avgPerCard.toFixed(0)}</div>
         </div>
       </div>

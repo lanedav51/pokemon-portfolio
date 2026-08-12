@@ -171,7 +171,7 @@ export default function AddCardPage() {
         </p>
         <button
           onClick={resetForm}
-          className="mt-4 rounded-full bg-red-600 px-6 py-2.5 font-medium text-white"
+          className="mt-4 rounded-full bg-sky-600 px-6 py-2.5 font-medium text-white"
         >
           Scan another card
         </button>
@@ -342,7 +342,7 @@ export default function AddCardPage() {
               )}
               <button
                 onClick={() => setSelectedCard(null)}
-                className="mt-1 self-start text-xs font-medium text-red-600 dark:text-red-400"
+                className="mt-1 self-start text-xs font-medium text-sky-600 dark:text-sky-400"
               >
                 Change card
               </button>
@@ -402,7 +402,7 @@ export default function AddCardPage() {
           <button
             onClick={handleSubmit}
             disabled={status === "submitting"}
-            className="rounded-full bg-red-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
+            className="rounded-full bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
           >
             {status === "submitting" ? "Saving…" : "Add to Portfolio"}
           </button>

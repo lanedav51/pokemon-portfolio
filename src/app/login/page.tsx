@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function LoginForm() {
@@ -33,23 +34,32 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
-      <div className="text-4xl">🃏</div>
-      <h1 className="text-lg font-semibold">Card Portfolio</h1>
-      <form onSubmit={handleSubmit} className="flex w-full max-w-xs flex-col gap-3">
+    <div className="flex min-h-dvh flex-1 flex-col items-center justify-center gap-8 bg-gradient-to-b from-sky-100 via-sky-50 to-amber-50 px-6 dark:from-neutral-950 dark:via-neutral-950 dark:to-neutral-950">
+      <div className="flex flex-col items-center gap-3">
+        <Image src="/icon.svg" alt="" width={76} height={76} priority className="drop-shadow-md" />
+        <div className="text-center">
+          <h1 className="text-xl font-bold">Card Portfolio</h1>
+          <p className="text-sm text-neutral-500">Track your Pokémon card collection</p>
+        </div>
+      </div>
+
+      <form
+        onSubmit={handleSubmit}
+        className="flex w-full max-w-xs flex-col gap-3 rounded-3xl border border-sky-100 bg-white p-6 shadow-lg shadow-sky-900/5 dark:border-neutral-800 dark:bg-neutral-900 dark:shadow-none"
+      >
         <input
           type="password"
           autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          className="rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-neutral-700 dark:bg-neutral-900 dark:focus:ring-sky-950"
         />
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={submitting || !password}
-          className="rounded-full bg-red-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
+          className="rounded-full bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
         >
           {submitting ? "Checking…" : "Enter"}
         </button>

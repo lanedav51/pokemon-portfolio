@@ -77,12 +77,12 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
 
       {entries && (
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="text-xs text-neutral-500">Total Value</div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+            <div className="text-xs text-neutral-500">⚡ Total Value</div>
             <div className="text-2xl font-semibold">${totalValue.toFixed(2)}</div>
           </div>
           <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-            <div className="text-xs text-neutral-500">Cards</div>
+            <div className="text-xs text-neutral-500">🎴 Cards</div>
             <div className="text-2xl font-semibold">{totalCards}</div>
           </div>
         </div>
@@ -104,7 +104,7 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
         <div className="flex flex-col items-center gap-3 pt-16 text-center text-neutral-500">
           <span className="text-3xl">🃏</span>
           <p className="text-sm">No cards in &quot;{sheetName}&quot; yet.</p>
-          <Link href="/add" className="rounded-full bg-red-600 px-5 py-2 text-sm font-medium text-white">
+          <Link href="/add" className="rounded-full bg-sky-600 px-5 py-2 text-sm font-medium text-white">
             Scan your first card
           </Link>
         </div>
