@@ -1,10 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { fileToResizedBase64 } from "@/lib/image";
 import { useStoredPortfolioName } from "@/lib/portfolioPreference";
-import { CARD_CONDITIONS, type AddCardPayload, type CardCondition, type CardSearchResult } from "@/lib/types";
+import {
+  CARD_CONDITIONS,
+  type AddCardPayload,
+  type CardCondition,
+  type CardSearchResult,
+  type PortfolioEntry,
+} from "@/lib/types";
 import PortfolioSelector from "@/components/PortfolioSelector";
 
 type Status = "idle" | "scanning" | "searching" | "submitting" | "success" | "error";
@@ -31,6 +37,38 @@ export default function AddCardPage() {
   const [quantity, setQuantity] = useState(1);
   const [price, setPrice] = useState<number>(0);
   const [notes, setNotes] = useState("");
+  const [wasMerge, setWasMerge] = useState(false);
+
+  // Used for duplicate detection: does the selected card + condition already
+  // exist as a row in this portfolio? Refetched after every successful save
+  // so back-to-back adds of the same card still detect each other.
+  const [existingEntries, setExistingEntries] = useState<PortfolioEntry[]>([]);
+  const [entriesRefreshToken, setEntriesRefreshToken] = useState(0);
+
+  useEffect(() => {
+    // Guards against an out-of-order response: sheetName briefly holds the
+    // SSR-safe default ("Portfolio") before syncing to the real client
+    // value right after hydration, firing this effect twice in quick
+    // succession. If that first (stale) request happens to resolve AFTER
+    // the second (correct) one, it would silently overwrite the right data
+    // with the wrong sheet's entries without this cancellation flag.
+    let cancelled = false;
+    fetch(`/api/sheets/list?sheet=${encodeURIComponent(sheetName)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled) setExistingEntries(json.entries ?? []);
+      })
+      .catch(() => {
+        // Best-effort: duplicate detection just won't trigger if this fails.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetName, entriesRefreshToken]);
+
+  const duplicate = selectedCard
+    ? existingEntries.find((e) => e.cardId === selectedCard.id && e.condition === condition)
+    : undefined;
 
   async function runSearch(query: string, number: string) {
     if (!query.trim() && !number.trim()) return;
@@ -122,6 +160,7 @@ export default function AddCardPage() {
     setQuantity(1);
     setPrice(0);
     setNotes("");
+    setWasMerge(false);
     setStatus("idle");
     setErrorMessage(null);
     if (cameraInputRef.current) cameraInputRef.current.value = "";
@@ -154,10 +193,41 @@ export default function AddCardPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to save");
+      setWasMerge(false);
       setStatus("success");
+      setEntriesRefreshToken((t) => t + 1);
     } catch (err) {
       setStatus("error");
       setErrorMessage(err instanceof Error ? err.message : "Failed to save");
+    }
+  }
+
+  async function handleMerge() {
+    if (!duplicate) return;
+    setStatus("submitting");
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch("/api/sheets/entry", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sheetName,
+          rowIndex: duplicate.rowIndex,
+          condition,
+          quantity: duplicate.quantity + quantity,
+          price,
+          notes: notes.trim() ? notes : duplicate.notes,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to update");
+      setWasMerge(true);
+      setStatus("success");
+      setEntriesRefreshToken((t) => t + 1);
+    } catch (err) {
+      setStatus("error");
+      setErrorMessage(err instanceof Error ? err.message : "Failed to update");
     }
   }
 
@@ -165,9 +235,11 @@ export default function AddCardPage() {
     return (
       <div className="flex flex-col items-center gap-4 px-4 pt-16 text-center">
         <div className="text-4xl">✅</div>
-        <h1 className="text-xl font-semibold">Added to your portfolio</h1>
+        <h1 className="text-xl font-semibold">{wasMerge ? "Quantity updated" : "Added to your portfolio"}</h1>
         <p className="text-sm text-neutral-500">
-          {selectedCard?.name} was saved to &quot;{sheetName}&quot;.
+          {wasMerge
+            ? `${selectedCard?.name} quantity was updated in "${sheetName}".`
+            : `${selectedCard?.name} was saved to "${sheetName}".`}
         </p>
         <button
           onClick={resetForm}
@@ -399,13 +471,38 @@ export default function AddCardPage() {
             />
           </label>
 
-          <button
-            onClick={handleSubmit}
-            disabled={status === "submitting"}
-            className="rounded-full bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
-          >
-            {status === "submitting" ? "Saving…" : "Add to Portfolio"}
-          </button>
+          {duplicate && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              You already have {duplicate.quantity} of this card ({condition}) in &quot;{sheetName}&quot;.
+            </p>
+          )}
+
+          {duplicate ? (
+            <div className="flex gap-2">
+              <button
+                onClick={handleSubmit}
+                disabled={status === "submitting"}
+                className="flex-1 rounded-full border border-neutral-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50 dark:border-neutral-700"
+              >
+                Add as New Row
+              </button>
+              <button
+                onClick={handleMerge}
+                disabled={status === "submitting"}
+                className="flex-1 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {status === "submitting" ? "Saving…" : `Merge (→ ${duplicate.quantity + quantity})`}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={status === "submitting"}
+              className="rounded-full bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
+            >
+              {status === "submitting" ? "Saving…" : "Add to Portfolio"}
+            </button>
+          )}
         </div>
       )}
     </div>

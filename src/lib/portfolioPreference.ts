@@ -22,6 +22,19 @@ function getSnapshot(): string {
   return window.localStorage.getItem(STORAGE_KEY) ?? DEFAULT_SHEET_NAME;
 }
 
+/**
+ * Reads the live value directly from localStorage. Use this instead of
+ * useStoredPortfolioName()'s return value inside a useEffect(..., [])
+ * closure or any other async callback -- that hook's first render (and
+ * thus the value captured by a mount-only effect's closure) intentionally
+ * returns the SSR-safe default before syncing to the real client value a
+ * render later, so a stale closure can see the wrong portfolio and act on
+ * it after the correction already happened.
+ */
+export function getCurrentPortfolio(): string {
+  return getSnapshot();
+}
+
 function getServerSnapshot(): string {
   return DEFAULT_SHEET_NAME;
 }

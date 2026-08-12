@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   DEFAULT_SHEET_NAME,
+  getCurrentPortfolio,
   setStoredPortfolio,
   useStoredPortfolioName,
 } from "@/lib/portfolioPreference";
@@ -24,13 +25,14 @@ export default function PortfolioSelector() {
         if (!res.ok) throw new Error(json.error ?? "Failed to load portfolios");
         const list: string[] = json.tabs.length > 0 ? json.tabs : [DEFAULT_SHEET_NAME];
         setTabs(list);
-        if (!list.includes(value)) {
+        // Read the live value rather than `value` from this effect's closure
+        // -- see getCurrentPortfolio()'s doc comment for why that matters.
+        if (!list.includes(getCurrentPortfolio())) {
           setStoredPortfolio(list[0]);
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load portfolios"));
     // Only meant to run once on mount to populate the tab list.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
