@@ -20,6 +20,15 @@ export type CardCondition =
   | "Heavily Played"
   | "Damaged";
 
+export const CARD_CONDITIONS: CardCondition[] = [
+  "Mint",
+  "Near Mint",
+  "Lightly Played",
+  "Moderately Played",
+  "Heavily Played",
+  "Damaged",
+];
+
 export interface PortfolioEntry {
   rowIndex: number;
   dateAdded: string;
@@ -46,4 +55,17 @@ export interface AddCardPayload {
   notes: string;
   imageUrl: string;
   sheetName: string;
+}
+
+export interface EditableCardFields {
+  condition: CardCondition | string;
+  quantity: number;
+  price: number;
+  notes: string;
+}
+
+export interface HistoryPoint {
+  date: string;
+  totalValue: number;
+  cardCount: number;
 }

@@ -15,16 +15,36 @@ along for free, and the whole thing gets appended as a row in a Google Sheet.
    card from the results (with images), fixing any OCR mistakes.
 3. Set condition, quantity, price (pre-filled with the live market price),
    and optional notes, then save. This appends one row to the selected
-   portfolio (a tab in your Google Sheet).
+   portfolio (a tab in your Google Sheet), and logs a value snapshot (see
+   Stats below).
 4. **`/`** — the portfolio view reads the selected tab back and shows total
-   value, card count, and the full list.
+   value, card count, and the full list. Tap any card to edit its condition,
+   quantity, price, or notes, or delete it.
+5. **`/stats`** — a value-over-time chart plus a breakdown of the current
+   portfolio (top cards, value by condition).
 
 ### Multiple portfolios
 
 Each portfolio is a separate tab in the same Google Sheet. Use the dropdown
-at the top of `/add` or `/` to switch between them, or pick **+ New
+at the top of `/add`, `/`, or `/stats` to switch between them, or pick **+ New
 portfolio…** to create one on the spot — it adds a new tab with the header
 row already set up. Your last-used portfolio is remembered on that device.
+
+### Refreshing prices
+
+Prices are a snapshot from when a card was added, not a live link. On `/`,
+**↻ Refresh Prices** re-fetches the current market price for every card in
+the selected portfolio and updates the sheet in one batch (there's also a
+per-card ↻ button in the edit panel for just one card). Every refresh — and
+every add/edit/delete — logs the portfolio's new total value to an internal
+`_History` tab, which is what powers the `/stats` chart.
+
+## Access
+
+The whole app sits behind a single shared password (`APP_PASSWORD`) — there's
+no per-user account, just one passcode gate, since this is meant for personal
+use but deployed to a public URL. Logging in sets a 90-day session cookie;
+**Log Out** in the bottom nav clears it.
 
 ## Google Cloud setup
 
@@ -48,10 +68,16 @@ account shared with your Sheet.
 7. Copy the sheet ID out of its URL:
    `https://docs.google.com/spreadsheets/d/THIS_PART/edit` → `GOOGLE_SHEET_ID`.
    Leave the sheet's first tab named `Portfolio` (or rename it to that) —
-   the app writes a header row automatically the first time it runs.
+   the app writes a header row automatically the first time it runs. Don't
+   rename or delete the `_History` tab the app creates for the value chart.
 8. Optional: grab a free API key from [dev.pokemontcg.io](https://dev.pokemontcg.io/)
    and set `POKEMONTCG_API_KEY` to raise the card-search rate limit from
    20/min to 20,000/day. Works without one for personal use.
+9. Pick a shared login password for `APP_PASSWORD`, and generate a random
+   `SESSION_SECRET` with:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
 
 Copy `.env.example` to `.env.local` and fill in the values above.
 
@@ -76,25 +102,27 @@ camera access on a plain HTTP origin other than localhost.
    existing project**, pick this repo. Netlify auto-detects Next.js — the
    build command and Next.js runtime plugin are handled automatically;
    `netlify.toml` in this repo just pins the Node version.
-3. Before the first deploy (or right after, then redeploy), add the four env
+3. Before the first deploy (or right after, then redeploy), add all six env
    vars from `.env.local` under **Site configuration → Environment
    variables**. Paste `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` exactly as it
-   appears in `.env.local`, `\n` sequences and all.
+   appears in `.env.local`, `\n` sequences and all — but without the
+   surrounding double quotes; Netlify stores the value literally rather than
+   parsing `.env` file syntax, so quote characters typed into the field
+   become part of the secret instead of being stripped.
 4. Deploy. Netlify gives you an HTTPS `https://<site-name>.netlify.app` URL.
-5. Open that URL on your phone and add it to your home screen (Share → Add
-   to Home Screen on iOS, or the install prompt on Android) — it's a PWA, so
-   it opens full-screen like a native app.
+5. Open that URL on your phone, log in with `APP_PASSWORD`, and add it to
+   your home screen (Share → Add to Home Screen on iOS, or the install
+   prompt on Android) — it's a PWA, so it opens full-screen like a native app.
 
 ### Vercel (alternative)
 
 Same shape: push to GitHub, import at [vercel.com/new](https://vercel.com/new),
-add the same four env vars in the project settings, deploy.
+add the same six env vars in the project settings, deploy.
 
 ## Notes on price data
 
 Prices come from whichever of TCGPlayer market price or Cardmarket trend
 price pokemontcg.io has for that card — TCGPlayer (USD) is preferred when
 available. Prices update however often pokemontcg.io refreshes (typically
-daily), and the price shown when you add a card is a snapshot saved into the
-sheet, not a live link — rescanning the same card later will save an updated
-price as a new row.
+daily); use **Refresh Prices** on `/` to pull the latest values into cards
+you already added.

@@ -1,15 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const TABS = [
   { href: "/", label: "Portfolio", icon: "📊" },
   { href: "/add", label: "Add Card", icon: "➕" },
+  { href: "/stats", label: "Stats", icon: "📈" },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  if (pathname === "/login") return null;
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-black/10 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-neutral-900/95">
@@ -29,6 +39,13 @@ export default function BottomNav() {
             </Link>
           );
         })}
+        <button
+          onClick={handleLogout}
+          className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium text-neutral-500 dark:text-neutral-400"
+        >
+          <span className="text-lg leading-none">🔒</span>
+          Log Out
+        </button>
       </div>
       <div className="h-[env(safe-area-inset-bottom)]" />
     </nav>

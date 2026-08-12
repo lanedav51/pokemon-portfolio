@@ -4,17 +4,8 @@ import { useRef, useState } from "react";
 import Image from "next/image";
 import { fileToResizedBase64 } from "@/lib/image";
 import { useStoredPortfolioName } from "@/lib/portfolioPreference";
-import type { AddCardPayload, CardCondition, CardSearchResult } from "@/lib/types";
+import { CARD_CONDITIONS, type AddCardPayload, type CardCondition, type CardSearchResult } from "@/lib/types";
 import PortfolioSelector from "@/components/PortfolioSelector";
-
-const CONDITIONS: CardCondition[] = [
-  "Mint",
-  "Near Mint",
-  "Lightly Played",
-  "Moderately Played",
-  "Heavily Played",
-  "Damaged",
-];
 
 type Status = "idle" | "scanning" | "searching" | "submitting" | "success" | "error";
 
@@ -365,7 +356,7 @@ export default function AddCardPage() {
                 onChange={(e) => setCondition(e.target.value as CardCondition)}
                 className="rounded-lg border border-neutral-300 bg-white px-2 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
               >
-                {CONDITIONS.map((c) => (
+                {CARD_CONDITIONS.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
