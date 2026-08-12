@@ -3,3 +3,11 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Turbopack's incremental build cache (.next/cache/turbopack/**) naturally
+  # records the env var values it read during compilation -- that's normal
+  # for a build cache, not a real leak (it's never part of the deployed
+  # function bundles or anything served to visitors). Netlify's secrets
+  # scanner otherwise flags it as a false positive on every build. Scoped
+  # to this path only, not to specific keys, so scanning still catches a
+  # genuine future leak into real output.
+  SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache/**"
