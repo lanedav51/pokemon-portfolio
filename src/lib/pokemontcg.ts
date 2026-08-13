@@ -1,3 +1,4 @@
+import { getBackupPrice } from "./backupPricing";
 import type { CardSearchResult } from "./types";
 
 const API_BASE = "https://api.pokemontcg.io/v2";
@@ -241,7 +242,11 @@ export async function searchCards(query?: string, number?: string): Promise<Card
   const attempts: string[][] = [];
   if (nameClause && numberClause) attempts.push([nameClause, numberClause]);
   if (nameClause) attempts.push([nameClause]);
-  if (!nameClause && numberClause) attempts.push([numberClause]);
+  // Always try number-alone as a final resort when we have one, not just
+  // when no name was given at all -- a contaminated OCR'd name (e.g. a
+  // promo card's stage badge running into the name) would otherwise waste
+  // a perfectly good number match by never falling through to it.
+  if (numberClause) attempts.push([numberClause]);
 
   for (const clauses of attempts) {
     try {
@@ -265,5 +270,18 @@ export async function getCardById(id: string): Promise<CardSearchResult | null> 
   }
 
   const json = (await res.json()) as { data: RawCard };
-  return toSearchResult(json.data);
+  const card = toSearchResult(json.data);
+
+  // pokemontcg.io has no TCGPlayer/Cardmarket price for every card (very
+  // recent or low-volume prints especially) -- every caller of getCardById
+  // (card selection, per-card refresh, bulk refresh) gets this fallback for
+  // free by living here rather than being duplicated at each call site.
+  if (card.marketPrice == null) {
+    const backupPrice = await getBackupPrice(card.name, card.setName, card.number);
+    if (backupPrice != null) {
+      return { ...card, marketPrice: backupPrice, priceSource: "backup" };
+    }
+  }
+
+  return card;
 }

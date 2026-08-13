@@ -5,11 +5,14 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 
 export async function POST(req: NextRequest) {
   try {
-    const { sheetName: rawSheetName } = (await req.json()) as { sheetName?: string };
+    const { sheetName: rawSheetName, onlyZero } = (await req.json()) as {
+      sheetName?: string;
+      onlyZero?: boolean;
+    };
     const sheetName = rawSheetName?.trim() || DEFAULT_SHEET_NAME;
 
     const entries = await listPortfolio(sheetName);
-    const withCardId = entries.filter((entry) => entry.cardId);
+    const withCardId = entries.filter((entry) => entry.cardId && (!onlyZero || entry.price === 0));
 
     const lookups = await mapWithConcurrency(withCardId, 5, async (entry) => {
       try {
@@ -33,7 +36,7 @@ export async function POST(req: NextRequest) {
     const cardCount = entries.reduce((sum, e) => sum + e.quantity, 0);
     await recordHistorySnapshot(sheetName, totalValue, cardCount);
 
-    return NextResponse.json({ updated: updates.length, total: entries.length, totalValue });
+    return NextResponse.json({ updated: updates.length, total: withCardId.length, totalValue });
   } catch (err) {
     console.error("Refresh prices failed", err);
     return NextResponse.json(

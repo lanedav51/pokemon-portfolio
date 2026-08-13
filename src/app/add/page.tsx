@@ -38,6 +38,7 @@ export default function AddCardPage() {
   const [price, setPrice] = useState<number>(0);
   const [notes, setNotes] = useState("");
   const [wasMerge, setWasMerge] = useState(false);
+  const [priceLookupBusy, setPriceLookupBusy] = useState(false);
 
   // Used for duplicate detection: does the selected card + condition already
   // exist as a row in this portfolio? Refetched after every successful save
@@ -68,6 +69,14 @@ export default function AddCardPage() {
 
   const duplicate = selectedCard
     ? existingEntries.find((e) => e.cardId === selectedCard.id && e.condition === condition)
+    : undefined;
+
+  // Used as a fallback price when pokemontcg.io has no market data for this
+  // card (common for very new or low-volume prints): if you've priced this
+  // exact card before -- any condition, in this portfolio -- reuse that
+  // instead of defaulting to $0.
+  const priorPriceForCard = selectedCard
+    ? existingEntries.find((e) => e.cardId === selectedCard.id)?.price
     : undefined;
 
   async function runSearch(query: string, number: string) {
@@ -144,9 +153,36 @@ export default function AddCardPage() {
     }
   }
 
-  function selectCard(card: CardSearchResult) {
+  async function selectCard(card: CardSearchResult) {
     setSelectedCard(card);
-    setPrice(card.marketPrice ?? 0);
+
+    if (card.marketPrice != null) {
+      setPrice(card.marketPrice);
+      return;
+    }
+
+    // The search results list doesn't do a backup-price lookup per result
+    // (that'd be one extra API call per card shown, most of which nobody
+    // picks) -- only for the one card actually selected, via the same
+    // getCardById route the per-card refresh button uses, which already
+    // falls back to a secondary pricing source when pokemontcg.io has none.
+    setPriceLookupBusy(true);
+    try {
+      const res = await fetch(`/api/cards/${encodeURIComponent(card.id)}`);
+      const json = await res.json();
+      if (res.ok && json.card?.marketPrice != null) {
+        setSelectedCard(json.card);
+        setPrice(json.card.marketPrice);
+        return;
+      }
+    } catch {
+      // Best-effort: fall through to the prior-price/manual-entry fallback below.
+    } finally {
+      setPriceLookupBusy(false);
+    }
+
+    const priorEntry = existingEntries.find((e) => e.cardId === card.id);
+    setPrice(priorEntry?.price ?? 0);
   }
 
   function resetForm() {
@@ -407,9 +443,20 @@ export default function AddCardPage() {
               <span className="text-xs text-neutral-500">
                 {selectedCard.setName} · #{selectedCard.number}
               </span>
-              {selectedCard.marketPrice != null && (
+              {priceLookupBusy ? (
+                <span className="text-xs text-neutral-500">Looking up price…</span>
+              ) : selectedCard.marketPrice != null ? (
                 <span className="text-xs text-neutral-500">
-                  Market: ${selectedCard.marketPrice.toFixed(2)} ({selectedCard.priceSource})
+                  Market: ${selectedCard.marketPrice.toFixed(2)} (
+                  {selectedCard.priceSource === "backup" ? "backup source" : selectedCard.priceSource})
+                </span>
+              ) : priorPriceForCard != null ? (
+                <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  No live market price — reused your last recorded price (${priorPriceForCard.toFixed(2)})
+                </span>
+              ) : (
+                <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  No market price found — enter your own below
                 </span>
               )}
               <button
@@ -456,7 +503,11 @@ export default function AddCardPage() {
                 step="0.01"
                 value={price}
                 onChange={(e) => setPrice(Number(e.target.value) || 0)}
-                className="rounded-lg border border-neutral-300 bg-white px-2 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                className={`rounded-lg border bg-white px-2 py-2 text-sm dark:bg-neutral-900 ${
+                  selectedCard.marketPrice == null
+                    ? "border-amber-400 dark:border-amber-700"
+                    : "border-neutral-300 dark:border-neutral-700"
+                }`}
               />
             </label>
           </div>
@@ -481,14 +532,14 @@ export default function AddCardPage() {
             <div className="flex gap-2">
               <button
                 onClick={handleSubmit}
-                disabled={status === "submitting"}
+                disabled={status === "submitting" || priceLookupBusy}
                 className="flex-1 rounded-full border border-neutral-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50 dark:border-neutral-700"
               >
                 Add as New Row
               </button>
               <button
                 onClick={handleMerge}
-                disabled={status === "submitting"}
+                disabled={status === "submitting" || priceLookupBusy}
                 className="flex-1 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
               >
                 {status === "submitting" ? "Saving…" : `Merge (→ ${duplicate.quantity + quantity})`}
@@ -497,7 +548,7 @@ export default function AddCardPage() {
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={status === "submitting"}
+              disabled={status === "submitting" || priceLookupBusy}
               className="rounded-full bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50"
             >
               {status === "submitting" ? "Saving…" : "Add to Portfolio"}

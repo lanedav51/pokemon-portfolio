@@ -35,9 +35,12 @@ row already set up. Your last-used portfolio is remembered on that device.
 Prices are a snapshot from when a card was added, not a live link. On `/`,
 **↻ Refresh Prices** re-fetches the current market price for every card in
 the selected portfolio and updates the sheet in one batch (there's also a
-per-card ↻ button in the edit panel for just one card). Every refresh — and
-every add/edit/delete — logs the portfolio's new total value to an internal
-`_History` tab, which is what powers the `/stats` chart.
+per-card ↻ button in the edit panel for just one card). When some cards
+still end up at $0 — pokemontcg.io has no data and neither does the backup
+source (see below) — **🔧 Fix $0** appears next to it and only targets
+those. Every refresh — and every add/edit/delete — logs the portfolio's new
+total value to an internal `_History` tab, which is what powers the
+`/stats` chart.
 
 ## Access
 
@@ -78,6 +81,12 @@ account shared with your Sheet.
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
+10. Optional: sign up for a free key at
+    [pokemonpricetracker.com/api-reference](https://www.pokemonpricetracker.com/api-reference)
+    (no card required) and set `POKEMON_PRICE_TRACKER_API_KEY` to fill in
+    prices for cards pokemontcg.io doesn't have data for. Works fine without
+    one — those cards just default to $0 until you price them yourself (or
+    hit **🔧 Fix $0** once pricing does show up somewhere).
 
 Copy `.env.example` to `.env.local` and fill in the values above.
 
@@ -102,7 +111,7 @@ camera access on a plain HTTP origin other than localhost.
    existing project**, pick this repo. Netlify auto-detects Next.js — the
    build command and Next.js runtime plugin are handled automatically;
    `netlify.toml` in this repo just pins the Node version.
-3. Before the first deploy (or right after, then redeploy), add all six env
+3. Before the first deploy (or right after, then redeploy), add the env
    vars from `.env.local` under **Site configuration → Environment
    variables**. Paste `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` exactly as it
    appears in `.env.local`, `\n` sequences and all — but without the
@@ -117,7 +126,7 @@ camera access on a plain HTTP origin other than localhost.
 ### Vercel (alternative)
 
 Same shape: push to GitHub, import at [vercel.com/new](https://vercel.com/new),
-add the same six env vars in the project settings, deploy.
+add the same env vars in the project settings, deploy.
 
 ## Notes on price data
 
@@ -126,3 +135,14 @@ price pokemontcg.io has for that card — TCGPlayer (USD) is preferred when
 available. Prices update however often pokemontcg.io refreshes (typically
 daily); use **Refresh Prices** on `/` to pull the latest values into cards
 you already added.
+
+When pokemontcg.io has no price for a card (common for very recently
+released cards, before secondary-market data exists anywhere) and
+`POKEMON_PRICE_TRACKER_API_KEY` is set, the app automatically tries that as
+a backup source — this happens transparently wherever a price is looked up:
+selecting a card on `/add`, the per-card refresh button, and both bulk
+refresh actions. If a card genuinely has no price on either source yet
+(brand new enough that no one's sold one), it falls back to whatever you
+last recorded for that exact card elsewhere in the portfolio, or $0 for you
+to fill in yourself — the app always tells you which of these happened
+rather than silently guessing.

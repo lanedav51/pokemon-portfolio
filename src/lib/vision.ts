@@ -20,6 +20,10 @@ interface Word {
 }
 
 const FRACTION_REGEX = /(\d{1,4})\s*\/\s*(\d{1,4})/;
+// Promo cards (e.g. "SWSH001", "SM211", "XY193") print a set-prefix code
+// instead of a "x/y" fraction -- no total, since they aren't part of a
+// numbered set in that sense. Matched only after the fraction regex fails.
+const PROMO_CODE_REGEX = /\b([A-Z]{2,6})\s?(\d{1,4})\b/;
 
 function wordFromAnnotation(annotation: EntityAnnotation): Word {
   const vertices = annotation.boundingPoly?.vertices ?? [];
@@ -44,7 +48,7 @@ function guessNumberFromBottomLeft(
   words: Word[],
   pageWidth: number,
   pageHeight: number
-): { number: string; total: string } | null {
+): { number: string; total: string | null } | null {
   if (!pageWidth || !pageHeight) return null;
 
   const bottomLeftWords = words
@@ -52,15 +56,26 @@ function guessNumberFromBottomLeft(
     .sort((a, b) => a.x - b.x);
 
   const joined = bottomLeftWords.map((w) => w.text).join(" ");
-  const match = joined.match(FRACTION_REGEX);
-  return match ? { number: match[1], total: match[2] } : null;
+
+  const fractionMatch = joined.match(FRACTION_REGEX);
+  if (fractionMatch) return { number: fractionMatch[1], total: fractionMatch[2] };
+
+  const promoMatch = joined.match(PROMO_CODE_REGEX);
+  if (promoMatch) return { number: `${promoMatch[1]}${promoMatch[2]}`, total: null };
+
+  return null;
 }
 
-const NAME_BLOCKLIST = /^(basic|stage|mega|restored)$/i;
+// Matched as substrings (not just whole-line), since some layouts —
+// promo cards especially — cluster the stage badge and/or HP value onto
+// the same line/height band as the name (e.g. "BASIC Grookey").
+const NAME_NOISE_WORDS = /\b(basic|stage\s*\d*|mega|restored)\b/gi;
 
 function cleanNameText(text: string): string {
   return text
-    .replace(/\bHP\b/gi, "")
+    .replace(/\bHP\s*\d+\b/gi, "") // "60 HP", "HP 60", and "HP60" as one token
+    .replace(/\bHP\b/gi, "") // bare "HP" when its number landed in a different line-cluster (large HP digits often do)
+    .replace(NAME_NOISE_WORDS, "")
     .replace(/\b\d+\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -101,7 +116,7 @@ function guessNameFromLargestTopText(words: Word[], pageWidth: number, pageHeigh
       const avgHeight = lineWords.reduce((sum, w) => sum + w.height, 0) / lineWords.length;
       return { text, avgHeight };
     })
-    .filter((line) => line.text.length > 1 && !NAME_BLOCKLIST.test(line.text));
+    .filter((line) => line.text.length > 1);
 
   if (candidates.length === 0) return null;
 
@@ -146,7 +161,9 @@ export async function recognizeCardText(imageBase64: string): Promise<{
 
   const guessedName =
     guessNameFromLargestTopText(words, pageWidth, pageHeight) ??
-    lines.find((line) => !/\d/.test(line) && line.length > 1 && !NAME_BLOCKLIST.test(line.trim())) ??
+    // .replace() (unlike .test()) is safe to reuse across calls with a
+    // global-flagged regex -- it doesn't carry lastIndex state between them.
+    lines.map((line) => line.replace(NAME_NOISE_WORDS, "").trim()).find((line) => !/\d/.test(line) && line.length > 1) ??
     lines[0] ??
     null;
 

@@ -30,7 +30,7 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [selectedEntry, setSelectedEntry] = useState<PortfolioEntry | null>(null);
-  const [refreshingPrices, setRefreshingPrices] = useState(false);
+  const [refreshingPrices, setRefreshingPrices] = useState<"all" | "zero" | null>(null);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,29 +43,34 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load portfolio"));
   }, [sheetName, refreshToken]);
 
-  async function handleRefreshPrices() {
-    setRefreshingPrices(true);
+  async function handleRefreshPrices(onlyZero: boolean) {
+    setRefreshingPrices(onlyZero ? "zero" : "all");
     setRefreshMessage(null);
     setError(null);
     try {
       const res = await fetch("/api/sheets/refresh-prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sheetName }),
+        body: JSON.stringify({ sheetName, onlyZero }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to refresh prices");
-      setRefreshMessage(`Updated ${json.updated} of ${json.total} card${json.total === 1 ? "" : "s"}.`);
+      setRefreshMessage(
+        onlyZero
+          ? `Priced ${json.updated} of ${json.total} card${json.total === 1 ? "" : "s"} that had $0.`
+          : `Updated ${json.updated} of ${json.total} card${json.total === 1 ? "" : "s"}.`
+      );
       setRefreshToken((t) => t + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to refresh prices");
     } finally {
-      setRefreshingPrices(false);
+      setRefreshingPrices(null);
     }
   }
 
   const totalValue = entries?.reduce((sum, e) => sum + e.totalValue, 0) ?? 0;
   const totalCards = entries?.reduce((sum, e) => sum + e.quantity, 0) ?? 0;
+  const zeroPricedCount = entries?.filter((e) => e.price === 0).length ?? 0;
 
   return (
     <>
@@ -89,13 +94,24 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
       )}
 
       {entries && entries.length > 0 && (
-        <button
-          onClick={handleRefreshPrices}
-          disabled={refreshingPrices}
-          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-neutral-700"
-        >
-          {refreshingPrices ? "Refreshing prices…" : "↻ Refresh Prices"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleRefreshPrices(false)}
+            disabled={refreshingPrices !== null}
+            className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-neutral-700"
+          >
+            {refreshingPrices === "all" ? "Refreshing…" : "↻ Refresh Prices"}
+          </button>
+          {zeroPricedCount > 0 && (
+            <button
+              onClick={() => handleRefreshPrices(true)}
+              disabled={refreshingPrices !== null}
+              className="flex-1 rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 disabled:opacity-50 dark:border-amber-800 dark:text-amber-400"
+            >
+              {refreshingPrices === "zero" ? "Pricing…" : `🔧 Fix $0 (${zeroPricedCount})`}
+            </button>
+          )}
+        </div>
       )}
 
       {refreshMessage && <p className="text-sm text-neutral-500">{refreshMessage}</p>}

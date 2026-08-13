@@ -9,7 +9,7 @@ export interface CardSearchResult {
   imageLarge: string;
   rarity: string | null;
   marketPrice: number | null;
-  priceSource: "tcgplayer" | "cardmarket" | null;
+  priceSource: "tcgplayer" | "cardmarket" | "backup" | null;
 }
 
 export type CardCondition =
