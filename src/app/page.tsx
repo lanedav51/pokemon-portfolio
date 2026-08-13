@@ -47,18 +47,46 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
     setRefreshingPrices(onlyZero ? "zero" : "all");
     setRefreshMessage(null);
     setError(null);
+
+    // The endpoint only processes a bounded batch per call (see its own
+    // comment) so a single request never risks a platform timeout on a
+    // large portfolio -- this loops it to completion, showing progress
+    // after each batch instead of one long silent wait. Rows already
+    // attempted this run are excluded from the next call rather than using
+    // a numeric offset: in onlyZero mode, a row this run just priced drops
+    // out of the "still $0" set immediately, which would shift everything
+    // after it and make offset-based paging skip entries.
+    let excludeRows: number[] = [];
+    let updatedTotal = 0;
+    let attemptedTotal = 0;
     try {
-      const res = await fetch("/api/sheets/refresh-prices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sheetName, onlyZero }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Failed to refresh prices");
+      while (true) {
+        const res = await fetch("/api/sheets/refresh-prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sheetName, onlyZero, excludeRows }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Failed to refresh prices");
+
+        updatedTotal += json.updatedInBatch;
+        attemptedTotal += json.attemptedRows.length;
+        excludeRows = [...excludeRows, ...json.attemptedRows];
+        setRefreshMessage(
+          onlyZero
+            ? `Priced ${updatedTotal} of ${attemptedTotal} $0 card${attemptedTotal === 1 ? "" : "s"} checked so far… (${json.remaining} left)`
+            : `Updated ${updatedTotal} of ${attemptedTotal} card${attemptedTotal === 1 ? "" : "s"} checked so far… (${json.remaining} left)`
+        );
+
+        // json.attemptedRows.length === 0 is a safety net against ever
+        // looping forever -- shouldn't happen alongside remaining > 0, but
+        // an empty batch with nothing left to exclude would otherwise spin.
+        if (json.remaining <= 0 || json.attemptedRows.length === 0) break;
+      }
       setRefreshMessage(
         onlyZero
-          ? `Priced ${json.updated} of ${json.total} card${json.total === 1 ? "" : "s"} that had $0.`
-          : `Updated ${json.updated} of ${json.total} card${json.total === 1 ? "" : "s"}.`
+          ? `Priced ${updatedTotal} of ${attemptedTotal} card${attemptedTotal === 1 ? "" : "s"} that had $0.`
+          : `Updated ${updatedTotal} of ${attemptedTotal} card${attemptedTotal === 1 ? "" : "s"}.`
       );
       setRefreshToken((t) => t + 1);
     } catch (err) {
