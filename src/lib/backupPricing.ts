@@ -39,7 +39,16 @@ export async function getBackupPrice(name: string, setName: string, number: stri
     const res = await fetch(`${API_BASE}/cards?${params.toString()}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Distinct log for rate limiting specifically -- otherwise this looks
+      // identical to "genuinely no price for this card" from the caller's
+      // side (both just return null), which is the right degrade-quietly
+      // behavior for the user but makes the real cause invisible in logs.
+      if (res.status === 429) {
+        console.error("PokemonPriceTracker rate limit hit:", res.headers.get("x-ratelimit-daily-remaining"));
+      }
+      return null;
+    }
 
     const json = (await res.json()) as { data?: BackupCard[] };
     const cards = json.data ?? [];
