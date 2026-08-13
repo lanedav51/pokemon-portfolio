@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCardById } from "@/lib/pokemontcg";
-import { getBackupPrice } from "@/lib/backupPricing";
+import { getBackupPrice, isBackupPriceRateLimited } from "@/lib/backupPricing";
 import { bulkUpdatePrices, DEFAULT_SHEET_NAME, listPortfolio, recordHistorySnapshot } from "@/lib/googleSheets";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
@@ -84,7 +84,13 @@ export async function POST(req: NextRequest) {
       await recordHistorySnapshot(sheetName, totalValue, cardCount);
     }
 
-    return NextResponse.json({ updatedInBatch: updates.length, attemptedRows, remaining, totalValue });
+    return NextResponse.json({
+      updatedInBatch: updates.length,
+      attemptedRows,
+      remaining,
+      totalValue,
+      backupRateLimited: onlyZero && isBackupPriceRateLimited(),
+    });
   } catch (err) {
     console.error("Refresh prices failed", err);
     return NextResponse.json(

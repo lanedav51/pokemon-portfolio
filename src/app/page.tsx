@@ -59,6 +59,7 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
     let excludeRows: number[] = [];
     let updatedTotal = 0;
     let attemptedTotal = 0;
+    let rateLimited = false;
     try {
       while (true) {
         const res = await fetch("/api/sheets/refresh-prices", {
@@ -72,6 +73,15 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
         updatedTotal += json.updatedInBatch;
         attemptedTotal += json.attemptedRows.length;
         excludeRows = [...excludeRows, ...json.attemptedRows];
+
+        // Stop immediately rather than burning through the rest of the list
+        // (and the Sheets API calls that come with each batch) once we know
+        // the backup source won't answer again until it un-blocks.
+        if (json.backupRateLimited) {
+          rateLimited = true;
+          break;
+        }
+
         setRefreshMessage(
           onlyZero
             ? `Priced ${updatedTotal} of ${attemptedTotal} $0 card${attemptedTotal === 1 ? "" : "s"} checked so far… (${json.remaining} left)`
@@ -84,9 +94,11 @@ function PortfolioList({ sheetName }: { sheetName: string }) {
         if (json.remaining <= 0 || json.attemptedRows.length === 0) break;
       }
       setRefreshMessage(
-        onlyZero
-          ? `Priced ${updatedTotal} of ${attemptedTotal} card${attemptedTotal === 1 ? "" : "s"} that had $0.`
-          : `Updated ${updatedTotal} of ${attemptedTotal} card${attemptedTotal === 1 ? "" : "s"}.`
+        rateLimited
+          ? `Priced ${updatedTotal} of ${attemptedTotal} checked before the backup price source hit its rate limit. Try again later.`
+          : onlyZero
+            ? `Priced ${updatedTotal} of ${attemptedTotal} card${attemptedTotal === 1 ? "" : "s"} that had $0.`
+            : `Updated ${updatedTotal} of ${attemptedTotal} card${attemptedTotal === 1 ? "" : "s"}.`
       );
       setRefreshToken((t) => t + 1);
     } catch (err) {

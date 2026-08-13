@@ -20,6 +20,24 @@ function normalizeNumber(raw: string | undefined | null): string | null {
   return /^\d+$/.test(numerator) ? String(Number(numerator)) : numerator;
 }
 
+// Module-level, so it's shared across every call in the same warm
+// serverless instance -- not just within one bulk request. Once the API
+// says "back off" (429 daily/minute limit, or 403 once it's gone further
+// and flagged the key for abuse), every subsequent card in that same
+// batch calling this concurrently would otherwise fire anyway and pile
+// more 429s onto the count that triggers the abuse block in the first
+// place. This is exactly what happened live: a batch kept calling after
+// the daily quota was already exhausted, and the resulting burst of 429s
+// got the key temporarily blocked entirely ("exceeded 50 429 requests in
+// 5 minutes"). Respecting Retry-After and going silent for that long
+// avoids compounding it.
+let blockedUntil = 0;
+
+/** Whether getBackupPrice is currently backing off after a rate limit/abuse block. */
+export function isBackupPriceRateLimited(): boolean {
+  return Date.now() < blockedUntil;
+}
+
 /**
  * Looks up a fallback market price from PokemonPriceTracker.com for cards
  * pokemontcg.io has no TCGPlayer/Cardmarket price for -- common for very
@@ -33,6 +51,7 @@ function normalizeNumber(raw: string | undefined | null): string | null {
 export async function getBackupPrice(name: string, setName: string, number: string): Promise<number | null> {
   const apiKey = process.env.POKEMON_PRICE_TRACKER_API_KEY;
   if (!apiKey) return null;
+  if (Date.now() < blockedUntil) return null;
 
   try {
     const params = new URLSearchParams({ search: `${name} ${setName}`, limit: "10" });
@@ -40,12 +59,12 @@ export async function getBackupPrice(name: string, setName: string, number: stri
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (!res.ok) {
-      // Distinct log for rate limiting specifically -- otherwise this looks
-      // identical to "genuinely no price for this card" from the caller's
-      // side (both just return null), which is the right degrade-quietly
-      // behavior for the user but makes the real cause invisible in logs.
-      if (res.status === 429) {
-        console.error("PokemonPriceTracker rate limit hit:", res.headers.get("x-ratelimit-daily-remaining"));
+      if (res.status === 429 || res.status === 403) {
+        const retryAfterSeconds = Number(res.headers.get("retry-after")) || 60;
+        blockedUntil = Date.now() + retryAfterSeconds * 1000;
+        console.error(
+          `PokemonPriceTracker backing off ${retryAfterSeconds}s after HTTP ${res.status} (rate limit or abuse block)`
+        );
       }
       return null;
     }
