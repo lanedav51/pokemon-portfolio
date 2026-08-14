@@ -24,12 +24,27 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 // for a single lookup, expensive to repeat across a batch) -- its worst
 // case per card is several seconds, so BATCH_SIZE_FULL matches the
 // concurrency level exactly (one parallel wave per request, never a
-// second sequential wave within the same timeout budget). getBackupPrice
-// has no retry loop and is typically fast, so Fix $0 can safely process
-// more per request.
-const CONCURRENCY = 5;
-const BATCH_SIZE_FULL = CONCURRENCY;
-const BATCH_SIZE_ZERO_ONLY = 15;
+// second sequential wave within the same timeout budget).
+const CONCURRENCY_FULL = 5;
+const BATCH_SIZE_FULL = CONCURRENCY_FULL;
+
+// Fix $0 hits a free-tier backup API with a 60/minute AND 100/day cap
+// shared across every use of this app -- bursting 5 requests at once (as
+// the full-refresh path does against pokemontcg.io) chews through that
+// budget fast and has already tripped its abuse protection once. Given
+// there's no rush here, Fix $0 deliberately goes one card at a time with a
+// real pause between each -- roughly 20 requests/minute at this pace,
+// a third of the limit, leaving real headroom. Batch size stays small
+// specifically *because* of the added delay: 2 pauses + 3 lookups keeps
+// one request's total worst-case time well clear of a serverless
+// timeout, which a bigger delayed batch would risk creeping back into.
+const CONCURRENCY_ZERO_ONLY = 1;
+const BATCH_SIZE_ZERO_ONLY = 3;
+const ZERO_ONLY_DELAY_MS = 2000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -54,9 +69,16 @@ export async function POST(req: NextRequest) {
     });
     const batchSize = onlyZero ? BATCH_SIZE_ZERO_ONLY : BATCH_SIZE_FULL;
     const batch = candidates.slice(0, batchSize);
+    const concurrency = onlyZero ? CONCURRENCY_ZERO_ONLY : CONCURRENCY_FULL;
 
-    const lookups = await mapWithConcurrency(batch, CONCURRENCY, async (entry) => {
+    const lookups = await mapWithConcurrency(batch, concurrency, async (entry, index) => {
       try {
+        // Concurrency is already 1 here, so this is a plain pause between
+        // one sequential card and the next -- skipped for the very first
+        // card so a batch doesn't eat a delay it doesn't need.
+        if (onlyZero && index > 0) {
+          await sleep(ZERO_ONLY_DELAY_MS);
+        }
         const price = onlyZero
           ? await getBackupPrice(entry.cardName, entry.setName, entry.number)
           : ((await getCardById(entry.cardId))?.marketPrice ?? null);
